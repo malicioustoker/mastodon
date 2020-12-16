@@ -1,26 +1,27 @@
-// Common configuration for webpacker loaded from config/webpack/paths.yml
+// Common configuration for webpacker loaded from config/webpacker.yml
 
-const { join, resolve } = require('path')
-const { env } = require('process')
-const { safeLoad } = require('js-yaml')
-const { readFileSync } = require('fs')
+const { resolve } = require('path');
+const { env } = require('process');
+const { safeLoad } = require('js-yaml');
+const { readFileSync } = require('fs');
 
-const configPath = resolve('config', 'webpack')
-const loadersDir = join(__dirname, 'loaders')
-const paths = safeLoad(readFileSync(join(configPath, 'paths.yml'), 'utf8'))[env.NODE_ENV]
-const devServer = safeLoad(readFileSync(join(configPath, 'development.server.yml'), 'utf8'))[env.NODE_ENV]
+const configPath = resolve('config', 'webpacker.yml');
+const settings = safeLoad(readFileSync(configPath), 'utf8')[env.RAILS_ENV || env.NODE_ENV];
 
-// Compute public path based on environment and CDN_HOST in production
-const ifHasCDN = env.CDN_HOST !== undefined && env.NODE_ENV === 'production'
-const devServerUrl = `http://${devServer.host}:${devServer.port}/${paths.entry}/`
-const publicUrl = ifHasCDN ? `${env.CDN_HOST}/${paths.entry}/` : `/${paths.entry}/`
-const publicPath = env.NODE_ENV !== 'production' ? devServerUrl : publicUrl
+const themePath = resolve('config', 'themes.yml');
+const themes = safeLoad(readFileSync(themePath), 'utf8');
+
+const output = {
+  path: resolve('public', settings.public_output_path),
+  publicPath: `/${settings.public_output_path}/`,
+};
 
 module.exports = {
-  devServer,
-  env,
-  paths,
-  loadersDir,
-  publicUrl,
-  publicPath
-}
+  settings,
+  themes,
+  env: {
+    NODE_ENV: env.NODE_ENV,
+    PUBLIC_OUTPUT_PATH: settings.public_output_path,
+  },
+  output,
+};

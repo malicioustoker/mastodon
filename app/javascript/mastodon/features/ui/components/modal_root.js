@@ -1,93 +1,96 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import { getScrollbarWidth } from 'mastodon/utils/scrollbar';
+import Base from 'mastodon/components/modal_root';
+import BundleContainer from '../containers/bundle_container';
+import BundleModalError from './bundle_modal_error';
+import ModalLoading from './modal_loading';
+import ActionsModal from './actions_modal';
 import MediaModal from './media_modal';
-import OnboardingModal from './onboarding_modal';
 import VideoModal from './video_modal';
 import BoostModal from './boost_modal';
+import AudioModal from './audio_modal';
 import ConfirmationModal from './confirmation_modal';
-import { TransitionMotion, spring } from 'react-motion';
+import FocalPointModal from './focal_point_modal';
+import {
+  MuteModal,
+  BlockModal,
+  ReportModal,
+  EmbedModal,
+  ListEditor,
+  ListAdder,
+} from '../../../features/ui/util/async-components';
 
 const MODAL_COMPONENTS = {
-  'MEDIA': MediaModal,
-  'ONBOARDING': OnboardingModal,
-  'VIDEO': VideoModal,
-  'BOOST': BoostModal,
-  'CONFIRM': ConfirmationModal
+  'MEDIA': () => Promise.resolve({ default: MediaModal }),
+  'VIDEO': () => Promise.resolve({ default: VideoModal }),
+  'AUDIO': () => Promise.resolve({ default: AudioModal }),
+  'BOOST': () => Promise.resolve({ default: BoostModal }),
+  'CONFIRM': () => Promise.resolve({ default: ConfirmationModal }),
+  'MUTE': MuteModal,
+  'BLOCK': BlockModal,
+  'REPORT': ReportModal,
+  'ACTIONS': () => Promise.resolve({ default: ActionsModal }),
+  'EMBED': EmbedModal,
+  'LIST_EDITOR': ListEditor,
+  'FOCAL_POINT': () => Promise.resolve({ default: FocalPointModal }),
+  'LIST_ADDER':ListAdder,
 };
 
-class ModalRoot extends React.PureComponent {
+export default class ModalRoot extends React.PureComponent {
 
-  constructor (props, context) {
-    super(props, context);
-    this.handleKeyUp = this.handleKeyUp.bind(this);
+  static propTypes = {
+    type: PropTypes.string,
+    props: PropTypes.object,
+    onClose: PropTypes.func.isRequired,
+  };
+
+  state = {
+    backgroundColor: null,
+  };
+
+  getSnapshotBeforeUpdate () {
+    return { visible: !!this.props.type };
   }
 
-  handleKeyUp (e) {
-    if ((e.key === 'Escape' || e.key === 'Esc' || e.keyCode === 27)
-         && !!this.props.type) {
-      this.props.onClose();
+  componentDidUpdate (prevProps, prevState, { visible }) {
+    if (visible) {
+      document.body.classList.add('with-modals--active');
+      document.documentElement.style.marginRight = `${getScrollbarWidth()}px`;
+    } else {
+      document.body.classList.remove('with-modals--active');
+      document.documentElement.style.marginRight = 0;
     }
   }
 
-  componentDidMount () {
-    window.addEventListener('keyup', this.handleKeyUp, false);
+  setBackgroundColor = color => {
+    this.setState({ backgroundColor: color });
   }
 
-  componentWillUnmount () {
-    window.removeEventListener('keyup', this.handleKeyUp);
+  renderLoading = modalId => () => {
+    return ['MEDIA', 'VIDEO', 'BOOST', 'CONFIRM', 'ACTIONS'].indexOf(modalId) === -1 ? <ModalLoading /> : null;
   }
 
-  willEnter () {
-    return { opacity: 0, scale: 0.98 };
-  }
+  renderError = (props) => {
+    const { onClose } = this.props;
 
-  willLeave () {
-    return { opacity: spring(0), scale: spring(0.98) };
+    return <BundleModalError {...props} onClose={onClose} />;
   }
 
   render () {
     const { type, props, onClose } = this.props;
-    const items = [];
-
-    if (!!type) {
-      items.push({
-        key: type,
-        data: { type, props },
-        style: { opacity: spring(1), scale: spring(1, { stiffness: 120, damping: 14 }) }
-      });
-    }
+    const { backgroundColor } = this.state;
+    const visible = !!type;
 
     return (
-      <TransitionMotion
-        styles={items}
-        willEnter={this.willEnter}
-        willLeave={this.willLeave}>
-        {interpolatedStyles =>
-          <div className='modal-root'>
-            {interpolatedStyles.map(({ key, data: { type, props }, style }) => {
-              const SpecificComponent = MODAL_COMPONENTS[type];
-
-              return (
-                <div key={key}>
-                  <div role='presentation' className='modal-root__overlay' style={{ opacity: style.opacity }} onClick={onClose} />
-                  <div className='modal-root__container' style={{ opacity: style.opacity, transform: `translateZ(0px) scale(${style.scale})` }}>
-                    <SpecificComponent {...props} onClose={onClose} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        }
-      </TransitionMotion>
+      <Base backgroundColor={backgroundColor} onClose={onClose}>
+        {visible && (
+          <BundleContainer fetchComponent={MODAL_COMPONENTS[type]} loading={this.renderLoading(type)} error={this.renderError} renderDelay={200}>
+            {(SpecificComponent) => <SpecificComponent {...props} onChangeBackgroundColor={this.setBackgroundColor} onClose={onClose} />}
+          </BundleContainer>
+        )}
+      </Base>
     );
   }
 
 }
-
-ModalRoot.propTypes = {
-  type: PropTypes.string,
-  props: PropTypes.object,
-  onClose: PropTypes.func.isRequired
-};
-
-export default ModalRoot;

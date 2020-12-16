@@ -1,15 +1,59 @@
 import React from 'react';
-import { Motion, spring } from 'react-motion';
 import PropTypes from 'prop-types';
+import classNames from 'classnames';
+import Icon from 'mastodon/components/icon';
+import AnimatedNumber from 'mastodon/components/animated_number';
 
-class IconButton extends React.PureComponent {
+export default class IconButton extends React.PureComponent {
 
-  constructor (props, context) {
-    super(props, context);
-    this.handleClick = this.handleClick.bind(this);
+  static propTypes = {
+    className: PropTypes.string,
+    title: PropTypes.string.isRequired,
+    icon: PropTypes.string.isRequired,
+    onClick: PropTypes.func,
+    onMouseDown: PropTypes.func,
+    onKeyDown: PropTypes.func,
+    onKeyPress: PropTypes.func,
+    size: PropTypes.number,
+    active: PropTypes.bool,
+    pressed: PropTypes.bool,
+    expanded: PropTypes.bool,
+    style: PropTypes.object,
+    activeStyle: PropTypes.object,
+    disabled: PropTypes.bool,
+    inverted: PropTypes.bool,
+    animate: PropTypes.bool,
+    overlay: PropTypes.bool,
+    tabIndex: PropTypes.string,
+    counter: PropTypes.number,
+    obfuscateCount: PropTypes.bool,
+  };
+
+  static defaultProps = {
+    size: 18,
+    active: false,
+    disabled: false,
+    animate: false,
+    overlay: false,
+    tabIndex: '0',
+  };
+
+  state = {
+    activate: false,
+    deactivate: false,
   }
 
-  handleClick (e) {
+  componentWillReceiveProps (nextProps) {
+    if (!nextProps.animate) return;
+
+    if (this.props.active && !nextProps.active) {
+      this.setState({ activate: false, deactivate: true });
+    } else if (!this.props.active && nextProps.active) {
+      this.setState({ activate: true, deactivate: false });
+    }
+  }
+
+  handleClick = (e) =>  {
     e.preventDefault();
 
     if (!this.props.disabled) {
@@ -17,80 +61,86 @@ class IconButton extends React.PureComponent {
     }
   }
 
+  handleKeyPress = (e) => {
+    if (this.props.onKeyPress && !this.props.disabled) {
+      this.props.onKeyPress(e);
+    }
+  }
+
+  handleMouseDown = (e) => {
+    if (!this.props.disabled && this.props.onMouseDown) {
+      this.props.onMouseDown(e);
+    }
+  }
+
+  handleKeyDown = (e) => {
+    if (!this.props.disabled && this.props.onKeyDown) {
+      this.props.onKeyDown(e);
+    }
+  }
+
   render () {
-    let style = {
+    const style = {
       fontSize: `${this.props.size}px`,
       width: `${this.props.size * 1.28571429}px`,
       height: `${this.props.size * 1.28571429}px`,
       lineHeight: `${this.props.size}px`,
-      ...this.props.style
+      ...this.props.style,
+      ...(this.props.active ? this.props.activeStyle : {}),
     };
 
-    if (this.props.active) {
-      style = { ...style, ...this.props.activeStyle };
-    }
+    const {
+      active,
+      className,
+      disabled,
+      expanded,
+      icon,
+      inverted,
+      overlay,
+      pressed,
+      tabIndex,
+      title,
+      counter,
+      obfuscateCount,
+    } = this.props;
 
-    const classes = ['icon-button'];
+    const {
+      activate,
+      deactivate,
+    } = this.state;
 
-    if (this.props.active) {
-      classes.push('active');
-    }
+    const classes = classNames(className, 'icon-button', {
+      active,
+      disabled,
+      inverted,
+      activate,
+      deactivate,
+      overlayed: overlay,
+      'icon-button--with-counter': typeof counter !== 'undefined',
+    });
 
-    if (this.props.disabled) {
-      classes.push('disabled');
-    }
-
-    if (this.props.inverted) {
-      classes.push('inverted');
-    }
-
-    if (this.props.overlay) {
-      classes.push('overlayed');
-    }
-
-    if (this.props.className) {
-      classes.push(this.props.className)
+    if (typeof counter !== 'undefined') {
+      style.width = 'auto';
     }
 
     return (
-      <Motion defaultStyle={{ rotate: this.props.active ? -360 : 0 }} style={{ rotate: this.props.animate ? spring(this.props.active ? -360 : 0, { stiffness: 120, damping: 7 }) : 0 }}>
-        {({ rotate }) =>
-          <button
-            aria-label={this.props.title}
-            title={this.props.title}
-            className={classes.join(' ')}
-            onClick={this.handleClick}
-            style={style}>
-            <i style={{ transform: `rotate(${rotate}deg)` }} className={`fa fa-fw fa-${this.props.icon}`} aria-hidden='true' />
-          </button>
-        }
-      </Motion>
+      <button
+        aria-label={title}
+        aria-pressed={pressed}
+        aria-expanded={expanded}
+        title={title}
+        className={classes}
+        onClick={this.handleClick}
+        onMouseDown={this.handleMouseDown}
+        onKeyDown={this.handleKeyDown}
+        onKeyPress={this.handleKeyPress}
+        style={style}
+        tabIndex={tabIndex}
+        disabled={disabled}
+      >
+        <Icon id={icon} fixedWidth aria-hidden='true' /> {typeof counter !== 'undefined' && <span className='icon-button__counter'><AnimatedNumber value={counter} obfuscate={obfuscateCount} /></span>}
+      </button>
     );
   }
 
 }
-
-IconButton.propTypes = {
-  className: PropTypes.string,
-  title: PropTypes.string.isRequired,
-  icon: PropTypes.string.isRequired,
-  onClick: PropTypes.func,
-  size: PropTypes.number,
-  active: PropTypes.bool,
-  style: PropTypes.object,
-  activeStyle: PropTypes.object,
-  disabled: PropTypes.bool,
-  inverted: PropTypes.bool,
-  animate: PropTypes.bool,
-  overlay: PropTypes.bool
-};
-
-IconButton.defaultProps = {
-  size: 18,
-  active: false,
-  disabled: false,
-  animate: false,
-  overlay: false
-};
-
-export default IconButton;

@@ -1,13 +1,13 @@
 require 'rails_helper'
 
-RSpec.describe PostStatusService do
+RSpec.describe PostStatusService, type: :service do
   subject { PostStatusService.new }
 
   it 'creates a new status' do
     account = Fabricate(:account)
     text = "test status update"
 
-    status = subject.call(account, text)
+    status = subject.call(account, text: text)
 
     expect(status).to be_persisted
     expect(status.text).to eq text
@@ -18,11 +18,49 @@ RSpec.describe PostStatusService do
     account = Fabricate(:account)
     text = "test status update"
 
-    status = subject.call(account, text, in_reply_to_status)
+    status = subject.call(account, text: text, thread: in_reply_to_status)
 
     expect(status).to be_persisted
     expect(status.text).to eq text
     expect(status.thread).to eq in_reply_to_status
+  end
+
+  it 'schedules a status' do
+    account = Fabricate(:account)
+    future  = Time.now.utc + 2.hours
+
+    status = subject.call(account, text: 'Hi future!', scheduled_at: future)
+
+    expect(status).to be_a ScheduledStatus
+    expect(status.scheduled_at).to eq future
+    expect(status.params['text']).to eq 'Hi future!'
+  end
+
+  it 'does not immediately create a status when scheduling a status' do
+    account = Fabricate(:account)
+    media = Fabricate(:media_attachment)
+    future  = Time.now.utc + 2.hours
+
+    status = subject.call(account, text: 'Hi future!', media_ids: [media.id], scheduled_at: future)
+
+    expect(status).to be_a ScheduledStatus
+    expect(status.scheduled_at).to eq future
+    expect(status.params['text']).to eq 'Hi future!'
+    expect(media.reload.status).to be_nil
+    expect(Status.where(text: 'Hi future!').exists?).to be_falsey
+  end
+
+  it 'creates response to the original status of boost' do
+    boosted_status = Fabricate(:status)
+    in_reply_to_status = Fabricate(:status, reblog: boosted_status)
+    account = Fabricate(:account)
+    text = "test status update"
+
+    status = subject.call(account, text: text, thread: in_reply_to_status)
+
+    expect(status).to be_persisted
+    expect(status.text).to eq text
+    expect(status.thread).to eq boosted_status
   end
 
   it 'creates a sensitive status' do
@@ -41,6 +79,13 @@ RSpec.describe PostStatusService do
     expect(status.spoiler_text).to eq spoiler_text
   end
 
+  it 'creates a sensitive status when there is a CW but no text' do
+    status = subject.call(Fabricate(:account), text: '', spoiler_text: 'foo')
+
+    expect(status).to be_persisted
+    expect(status).to be_sensitive
+  end
+
   it 'creates a status with empty default spoiler text' do
     status = create_status_with_options(spoiler_text: nil)
 
@@ -55,6 +100,13 @@ RSpec.describe PostStatusService do
     expect(status.visibility).to eq "private"
   end
 
+  it 'creates a status with limited visibility for silenced users' do
+    status = subject.call(Fabricate(:account, silenced: true), text: 'test', visibility: :public)
+
+    expect(status).to be_persisted
+    expect(status.visibility).to eq "unlisted"
+  end
+
   it 'creates a status for the given application' do
     application = Fabricate(:application)
 
@@ -65,15 +117,12 @@ RSpec.describe PostStatusService do
   end
 
   it 'creates a status with a language set' do
-    detector = double(to_iso_s: :en)
-    allow(LanguageDetector).to receive(:new).and_return(detector)
-
     account = Fabricate(:account)
-    text = 'test status text'
+    text = 'This is an English text.'
 
-    subject.call(account, text)
+    status = subject.call(account, text: text)
 
-    expect(LanguageDetector).to have_received(:new).with(text, account)
+    expect(status.language).to eq 'en'
   end
 
   it 'processes mentions' do
@@ -82,7 +131,7 @@ RSpec.describe PostStatusService do
     allow(ProcessMentionsService).to receive(:new).and_return(mention_service)
     account = Fabricate(:account)
 
-    status = subject.call(account, "test status update")
+    status = subject.call(account, text: "test status update")
 
     expect(ProcessMentionsService).to have_received(:new)
     expect(mention_service).to have_received(:call).with(status)
@@ -94,45 +143,57 @@ RSpec.describe PostStatusService do
     allow(ProcessHashtagsService).to receive(:new).and_return(hashtags_service)
     account = Fabricate(:account)
 
-    status = subject.call(account, "test status update")
+    status = subject.call(account, text: "test status update")
 
     expect(ProcessHashtagsService).to have_received(:new)
     expect(hashtags_service).to have_received(:call).with(status)
   end
 
-  it 'pings PuSH hubs' do
+  it 'gets distributed' do
     allow(DistributionWorker).to receive(:perform_async)
-    allow(Pubsubhubbub::DistributionWorker).to receive(:perform_async)
+    allow(ActivityPub::DistributionWorker).to receive(:perform_async)
+
     account = Fabricate(:account)
 
-    status = subject.call(account, "test status update")
+    status = subject.call(account, text: "test status update")
 
     expect(DistributionWorker).to have_received(:perform_async).with(status.id)
-    expect(Pubsubhubbub::DistributionWorker).
-      to have_received(:perform_async).with(status.stream_entry.id)
+    expect(ActivityPub::DistributionWorker).to have_received(:perform_async).with(status.id)
   end
 
   it 'crawls links' do
     allow(LinkCrawlWorker).to receive(:perform_async)
     account = Fabricate(:account)
 
-    status = subject.call(account, "test status update")
+    status = subject.call(account, text: "test status update")
 
     expect(LinkCrawlWorker).to have_received(:perform_async).with(status.id)
   end
 
   it 'attaches the given media to the created status' do
     account = Fabricate(:account)
-    media = Fabricate(:media_attachment)
+    media = Fabricate(:media_attachment, account: account)
 
     status = subject.call(
       account,
-      "test status update",
-      nil,
+      text: "test status update",
       media_ids: [media.id],
     )
 
     expect(media.reload.status).to eq status
+  end
+
+  it 'does not attach media from another account to the created status' do
+    account = Fabricate(:account)
+    media = Fabricate(:media_attachment, account: Fabricate(:account))
+
+    status = subject.call(
+      account,
+      text: "test status update",
+      media_ids: [media.id],
+    )
+
+    expect(media.reload.status).to eq nil
   end
 
   it 'does not allow attaching more than 4 files' do
@@ -141,8 +202,7 @@ RSpec.describe PostStatusService do
     expect do
       subject.call(
         account,
-        "test status update",
-        nil,
+        text: "test status update",
         media_ids: [
           Fabricate(:media_attachment, account: account),
           Fabricate(:media_attachment, account: account),
@@ -159,15 +219,18 @@ RSpec.describe PostStatusService do
 
   it 'does not allow attaching both videos and images' do
     account = Fabricate(:account)
+    video   = Fabricate(:media_attachment, type: :video, account: account)
+    image   = Fabricate(:media_attachment, type: :image, account: account)
+
+    video.update(type: :video)
 
     expect do
       subject.call(
         account,
-        "test status update",
-        nil,
+        text: "test status update",
         media_ids: [
-          Fabricate(:media_attachment, type: :video, account: account),
-          Fabricate(:media_attachment, type: :image, account: account),
+          video,
+          image,
         ].map(&:id),
       )
     end.to raise_error(
@@ -178,12 +241,12 @@ RSpec.describe PostStatusService do
 
   it 'returns existing status when used twice with idempotency key' do
     account = Fabricate(:account)
-    status1 = subject.call(account, 'test', nil, idempotency: 'meepmeep')
-    status2 = subject.call(account, 'test', nil, idempotency: 'meepmeep')
+    status1 = subject.call(account, text: 'test', idempotency: 'meepmeep')
+    status2 = subject.call(account, text: 'test', idempotency: 'meepmeep')
     expect(status2.id).to eq status1.id
   end
 
-  def create_status_with_options(options = {})
-    subject.call(Fabricate(:account), 'test', nil, options)
+  def create_status_with_options(**options)
+    subject.call(Fabricate(:account), options.merge(text: 'test'))
   end
 end

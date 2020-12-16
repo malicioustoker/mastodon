@@ -1,96 +1,140 @@
 import React from 'react';
 import { connect } from 'react-redux';
+import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
 import PropTypes from 'prop-types';
 import StatusListContainer from '../ui/containers/status_list_container';
-import Column from '../ui/components/column';
-import {
-  refreshTimeline,
-  updateTimeline,
-  deleteFromTimelines,
-  connectTimeline,
-  disconnectTimeline
-} from '../../actions/timelines';
-import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
-import ColumnBackButtonSlim from '../../components/column_back_button_slim';
-import createStream from '../../stream';
+import Column from '../../components/column';
+import ColumnHeader from '../../components/column_header';
+import { expandPublicTimeline } from '../../actions/timelines';
+import { addColumn, removeColumn, moveColumn } from '../../actions/columns';
+import ColumnSettingsContainer from './containers/column_settings_container';
+import { connectPublicStream } from '../../actions/streaming';
 
 const messages = defineMessages({
-  title: { id: 'column.public', defaultMessage: 'Federated timeline' }
+  title: { id: 'column.public', defaultMessage: 'Federated timeline' },
 });
 
-const mapStateToProps = state => ({
-  hasUnread: state.getIn(['timelines', 'public', 'unread']) > 0,
-  streamingAPIBaseURL: state.getIn(['meta', 'streaming_api_base_url']),
-  accessToken: state.getIn(['meta', 'access_token'])
-});
+const mapStateToProps = (state, { columnId }) => {
+  const uuid = columnId;
+  const columns = state.getIn(['settings', 'columns']);
+  const index = columns.findIndex(c => c.get('uuid') === uuid);
+  const onlyMedia = (columnId && index >= 0) ? columns.get(index).getIn(['params', 'other', 'onlyMedia']) : state.getIn(['settings', 'public', 'other', 'onlyMedia']);
+  const onlyRemote = (columnId && index >= 0) ? columns.get(index).getIn(['params', 'other', 'onlyRemote']) : state.getIn(['settings', 'public', 'other', 'onlyRemote']);
+  const timelineState = state.getIn(['timelines', `public${onlyMedia ? ':media' : ''}`]);
 
-let subscription;
+  return {
+    hasUnread: !!timelineState && timelineState.get('unread') > 0,
+    onlyMedia,
+    onlyRemote,
+  };
+};
 
+export default @connect(mapStateToProps)
+@injectIntl
 class PublicTimeline extends React.PureComponent {
 
-  componentDidMount () {
-    const { dispatch, streamingAPIBaseURL, accessToken } = this.props;
+  static contextTypes = {
+    router: PropTypes.object,
+  };
 
-    dispatch(refreshTimeline('public'));
+  static defaultProps = {
+    onlyMedia: false,
+  };
 
-    if (typeof subscription !== 'undefined') {
-      return;
+  static propTypes = {
+    dispatch: PropTypes.func.isRequired,
+    shouldUpdateScroll: PropTypes.func,
+    intl: PropTypes.object.isRequired,
+    columnId: PropTypes.string,
+    multiColumn: PropTypes.bool,
+    hasUnread: PropTypes.bool,
+    onlyMedia: PropTypes.bool,
+    onlyRemote: PropTypes.bool,
+  };
+
+  handlePin = () => {
+    const { columnId, dispatch, onlyMedia, onlyRemote } = this.props;
+
+    if (columnId) {
+      dispatch(removeColumn(columnId));
+    } else {
+      dispatch(addColumn(onlyRemote ? 'REMOTE' : 'PUBLIC', { other: { onlyMedia, onlyRemote } }));
     }
+  }
 
-    subscription = createStream(streamingAPIBaseURL, accessToken, 'public', {
+  handleMove = (dir) => {
+    const { columnId, dispatch } = this.props;
+    dispatch(moveColumn(columnId, dir));
+  }
 
-      connected () {
-        dispatch(connectTimeline('public'));
-      },
+  handleHeaderClick = () => {
+    this.column.scrollTop();
+  }
 
-      reconnected () {
-        dispatch(connectTimeline('public'));
-      },
+  componentDidMount () {
+    const { dispatch, onlyMedia, onlyRemote } = this.props;
 
-      disconnected () {
-        dispatch(disconnectTimeline('public'));
-      },
+    dispatch(expandPublicTimeline({ onlyMedia, onlyRemote }));
+    this.disconnect = dispatch(connectPublicStream({ onlyMedia, onlyRemote }));
+  }
 
-      received (data) {
-        switch(data.event) {
-        case 'update':
-          dispatch(updateTimeline('public', JSON.parse(data.payload)));
-          break;
-        case 'delete':
-          dispatch(deleteFromTimelines(data.payload));
-          break;
-        }
-      }
+  componentDidUpdate (prevProps) {
+    if (prevProps.onlyMedia !== this.props.onlyMedia || prevProps.onlyRemote !== this.props.onlyRemote) {
+      const { dispatch, onlyMedia, onlyRemote } = this.props;
 
-    });
+      this.disconnect();
+      dispatch(expandPublicTimeline({ onlyMedia, onlyRemote }));
+      this.disconnect = dispatch(connectPublicStream({ onlyMedia, onlyRemote }));
+    }
   }
 
   componentWillUnmount () {
-    // if (typeof subscription !== 'undefined') {
-    //   subscription.close();
-    //   subscription = null;
-    // }
+    if (this.disconnect) {
+      this.disconnect();
+      this.disconnect = null;
+    }
+  }
+
+  setRef = c => {
+    this.column = c;
+  }
+
+  handleLoadMore = maxId => {
+    const { dispatch, onlyMedia, onlyRemote } = this.props;
+
+    dispatch(expandPublicTimeline({ maxId, onlyMedia, onlyRemote }));
   }
 
   render () {
-    const { intl, hasUnread } = this.props;
+    const { intl, shouldUpdateScroll, columnId, hasUnread, multiColumn, onlyMedia, onlyRemote } = this.props;
+    const pinned = !!columnId;
 
     return (
-      <Column icon='globe' active={hasUnread} heading={intl.formatMessage(messages.title)}>
-        <ColumnBackButtonSlim />
-        <StatusListContainer {...this.props} type='public' scrollKey='public_timeline' emptyMessage={<FormattedMessage id='empty_column.public' defaultMessage='There is nothing here! Write something publicly, or manually follow users from other instances to fill it up' />} />
+      <Column bindToDocument={!multiColumn} ref={this.setRef} label={intl.formatMessage(messages.title)}>
+        <ColumnHeader
+          icon='globe'
+          active={hasUnread}
+          title={intl.formatMessage(messages.title)}
+          onPin={this.handlePin}
+          onMove={this.handleMove}
+          onClick={this.handleHeaderClick}
+          pinned={pinned}
+          multiColumn={multiColumn}
+        >
+          <ColumnSettingsContainer columnId={columnId} />
+        </ColumnHeader>
+
+        <StatusListContainer
+          timelineId={`public${onlyRemote ? ':remote' : ''}${onlyMedia ? ':media' : ''}`}
+          onLoadMore={this.handleLoadMore}
+          trackScroll={!pinned}
+          scrollKey={`public_timeline-${columnId}`}
+          emptyMessage={<FormattedMessage id='empty_column.public' defaultMessage='There is nothing here! Write something publicly, or manually follow users from other servers to fill it up' />}
+          shouldUpdateScroll={shouldUpdateScroll}
+          bindToDocument={!multiColumn}
+        />
       </Column>
     );
   }
 
 }
-
-PublicTimeline.propTypes = {
-  dispatch: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired,
-  streamingAPIBaseURL: PropTypes.string.isRequired,
-  accessToken: PropTypes.string.isRequired,
-  hasUnread: PropTypes.bool
-};
-
-export default connect(mapStateToProps)(injectIntl(PublicTimeline));

@@ -1,33 +1,56 @@
 import React from 'react';
 import { connect } from 'react-redux';
+import ImmutablePureComponent from 'react-immutable-pure-component';
 import PropTypes from 'prop-types';
 import ImmutablePropTypes from 'react-immutable-proptypes';
 import LoadingIndicator from '../../components/loading_indicator';
 import { fetchFavourites } from '../../actions/interactions';
-import { ScrollContainer } from 'react-router-scroll';
+import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
 import AccountContainer from '../../containers/account_container';
 import Column from '../ui/components/column';
-import ColumnBackButton from '../../components/column_back_button';
-import ImmutablePureComponent from 'react-immutable-pure-component';
+import ScrollableList from '../../components/scrollable_list';
+import Icon from 'mastodon/components/icon';
+import ColumnHeader from '../../components/column_header';
 
-const mapStateToProps = (state, props) => ({
-  accountIds: state.getIn(['user_lists', 'favourited_by', Number(props.params.statusId)])
+const messages = defineMessages({
+  refresh: { id: 'refresh', defaultMessage: 'Refresh' },
 });
 
+const mapStateToProps = (state, props) => ({
+  accountIds: state.getIn(['user_lists', 'favourited_by', props.params.statusId]),
+});
+
+export default @connect(mapStateToProps)
+@injectIntl
 class Favourites extends ImmutablePureComponent {
 
-  componentWillMount () {
-    this.props.dispatch(fetchFavourites(Number(this.props.params.statusId)));
-  }
+  static propTypes = {
+    params: PropTypes.object.isRequired,
+    dispatch: PropTypes.func.isRequired,
+    shouldUpdateScroll: PropTypes.func,
+    accountIds: ImmutablePropTypes.list,
+    multiColumn: PropTypes.bool,
+    intl: PropTypes.object.isRequired,
+  };
 
-  componentWillReceiveProps(nextProps) {
-    if (nextProps.params.statusId !== this.props.params.statusId && nextProps.params.statusId) {
-      this.props.dispatch(fetchFavourites(Number(nextProps.params.statusId)));
+  componentWillMount () {
+    if (!this.props.accountIds) {
+      this.props.dispatch(fetchFavourites(this.props.params.statusId));
     }
   }
 
+  componentWillReceiveProps (nextProps) {
+    if (nextProps.params.statusId !== this.props.params.statusId && nextProps.params.statusId) {
+      this.props.dispatch(fetchFavourites(nextProps.params.statusId));
+    }
+  }
+
+  handleRefresh = () => {
+    this.props.dispatch(fetchFavourites(this.props.params.statusId));
+  }
+
   render () {
-    const { accountIds } = this.props;
+    const { intl, shouldUpdateScroll, accountIds, multiColumn } = this.props;
 
     if (!accountIds) {
       return (
@@ -37,25 +60,30 @@ class Favourites extends ImmutablePureComponent {
       );
     }
 
-    return (
-      <Column>
-        <ColumnBackButton />
+    const emptyMessage = <FormattedMessage id='empty_column.favourites' defaultMessage='No one has favourited this toot yet. When someone does, they will show up here.' />;
 
-        <ScrollContainer scrollKey='favourites'>
-          <div className='scrollable'>
-            {accountIds.map(id => <AccountContainer key={id} id={id} withNote={false} />)}
-          </div>
-        </ScrollContainer>
+    return (
+      <Column bindToDocument={!multiColumn}>
+        <ColumnHeader
+          showBackButton
+          multiColumn={multiColumn}
+          extraButton={(
+            <button className='column-header__button' title={intl.formatMessage(messages.refresh)} aria-label={intl.formatMessage(messages.refresh)} onClick={this.handleRefresh}><Icon id='refresh' /></button>
+          )}
+        />
+
+        <ScrollableList
+          scrollKey='favourites'
+          shouldUpdateScroll={shouldUpdateScroll}
+          emptyMessage={emptyMessage}
+          bindToDocument={!multiColumn}
+        >
+          {accountIds.map(id =>
+            <AccountContainer key={id} id={id} withNote={false} />,
+          )}
+        </ScrollableList>
       </Column>
     );
   }
 
 }
-
-Favourites.propTypes = {
-  params: PropTypes.object.isRequired,
-  dispatch: PropTypes.func.isRequired,
-  accountIds: ImmutablePropTypes.list
-};
-
-export default connect(mapStateToProps)(Favourites);

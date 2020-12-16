@@ -1,27 +1,18 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { defineMessages, injectIntl } from 'react-intl';
+import { FormattedMessage } from 'react-intl';
+import Icon from 'mastodon/components/icon';
 
-const messages = defineMessages({
-  clear: { id: 'notifications.clear', defaultMessage: 'Clear notifications' }
-});
+export default class ClearColumnButton extends React.PureComponent {
 
-class ClearColumnButton extends React.Component {
+  static propTypes = {
+    onClick: PropTypes.func.isRequired,
+  };
 
   render () {
-    const { intl } = this.props;
-
     return (
-      <div role='button' title={intl.formatMessage(messages.clear)} className='column-icon column-icon-clear' tabIndex='0' onClick={this.props.onClick}>
-        <i className='fa fa-eraser' />
-      </div>
+      <button className='text-btn column-header__setting-btn' tabIndex='0' onClick={this.props.onClick}><Icon id='eraser' /> <FormattedMessage id='notifications.clear' defaultMessage='Clear notifications' /></button>
     );
   }
+
 }
-
-ClearColumnButton.propTypes = {
-  onClick: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired
-};
-
-export default injectIntl(ClearColumnButton);

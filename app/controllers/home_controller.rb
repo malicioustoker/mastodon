@@ -1,29 +1,56 @@
 # frozen_string_literal: true
 
 class HomeController < ApplicationController
+  before_action :redirect_unauthenticated_to_permalinks!
   before_action :authenticate_user!
+  before_action :set_referrer_policy_header
 
   def index
-    @body_classes           = 'app-body'
-    @token                  = find_or_create_access_token.token
-    @web_settings           = Web::Setting.find_by(user: current_user)&.data || {}
-    @admin                  = Account.find_local(Setting.site_contact_username)
-    @streaming_api_base_url = Rails.configuration.x.streaming_api_base_url
+    @body_classes = 'app-body'
   end
 
   private
 
-  def authenticate_user!
-    redirect_to(single_user_mode? ? account_path(Account.first) : about_path) unless user_signed_in?
+  def redirect_unauthenticated_to_permalinks!
+    return if user_signed_in?
+
+    matches = request.path.match(/\A\/web\/(statuses|accounts)\/([\d]+)\z/)
+
+    if matches
+      case matches[1]
+      when 'statuses'
+        status = Status.find_by(id: matches[2])
+
+        if status&.distributable?
+          redirect_to(ActivityPub::TagManager.instance.url_for(status))
+          return
+        end
+      when 'accounts'
+        account = Account.find_by(id: matches[2])
+
+        if account
+          redirect_to(ActivityPub::TagManager.instance.url_for(account))
+          return
+        end
+      end
+    end
+
+    matches = request.path.match(%r{\A/web/timelines/tag/(?<tag>.+)\z})
+
+    redirect_to(matches ? tag_path(CGI.unescape(matches[:tag])) : default_redirect_path)
   end
 
-  def find_or_create_access_token
-    Doorkeeper::AccessToken.find_or_create_for(
-      Doorkeeper::Application.where(superapp: true).first,
-      current_user.id,
-      Doorkeeper::OAuth::Scopes.from_string('read write follow'),
-      Doorkeeper.configuration.access_token_expires_in,
-      Doorkeeper.configuration.refresh_token_enabled?
-    )
+  def default_redirect_path
+    if request.path.start_with?('/web') || whitelist_mode?
+      new_user_session_path
+    elsif single_user_mode?
+      short_account_path(Account.local.without_suspended.where('id > 0').first)
+    else
+      about_path
+    end
+  end
+
+  def set_referrer_policy_header
+    response.headers['Referrer-Policy'] = 'origin'
   end
 end

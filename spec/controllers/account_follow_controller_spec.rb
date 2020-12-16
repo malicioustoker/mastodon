@@ -7,19 +7,58 @@ describe AccountFollowController do
   let(:alice) { Fabricate(:account, username: 'alice') }
 
   describe 'POST #create' do
-    before do
-      sign_in(user)
-    end
+    let(:service) { double }
 
-    it 'redirects to account path' do
-      service = double
+    subject { post :create, params: { account_username: alice.username } }
+
+    before do
       allow(FollowService).to receive(:new).and_return(service)
       allow(service).to receive(:call)
+    end
 
-      post :create, params: { account_username: alice.username }
+    context 'when account is permanently suspended' do
+      before do
+        alice.suspend!
+        alice.deletion_request.destroy
+        subject
+      end
 
-      expect(service).to have_received(:call).with(user.account, 'alice')
-      expect(response).to redirect_to(account_path(alice))
+      it 'returns http gone' do
+        expect(response).to have_http_status(410)
+      end
+    end
+
+    context 'when account is temporarily suspended' do
+      before do
+        alice.suspend!
+        subject
+      end
+
+      it 'returns http forbidden' do
+        expect(response).to have_http_status(403)
+      end
+    end
+
+    context 'when signed out' do
+      before do
+        subject
+      end
+
+      it 'does not follow' do
+        expect(FollowService).not_to receive(:new)
+      end
+    end
+
+    context 'when signed in' do
+      before do
+        sign_in(user)
+        subject
+      end
+
+      it 'redirects to account path' do
+        expect(service).to have_received(:call).with(user.account, alice, with_rate_limit: true)
+        expect(response).to redirect_to(account_path(alice))
+      end
     end
   end
 end

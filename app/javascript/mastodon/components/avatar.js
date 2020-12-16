@@ -1,32 +1,44 @@
 import React from 'react';
 import PropTypes from 'prop-types';
+import ImmutablePropTypes from 'react-immutable-proptypes';
+import { autoPlayGif } from '../initial_state';
 
-class Avatar extends React.PureComponent {
+export default class Avatar extends React.PureComponent {
 
-  constructor (props, context) {
-    super(props, context);
+  static propTypes = {
+    account: ImmutablePropTypes.map.isRequired,
+    size: PropTypes.number.isRequired,
+    style: PropTypes.object,
+    inline: PropTypes.bool,
+    animate: PropTypes.bool,
+  };
 
-    this.state = {
-      hovering: false
-    };
+  static defaultProps = {
+    animate: autoPlayGif,
+    size: 20,
+    inline: false,
+  };
 
-    this.handleMouseEnter = this.handleMouseEnter.bind(this);
-    this.handleMouseLeave = this.handleMouseLeave.bind(this);
-  }
+  state = {
+    hovering: false,
+  };
 
-  handleMouseEnter () {
+  handleMouseEnter = () => {
     if (this.props.animate) return;
     this.setState({ hovering: true });
   }
 
-  handleMouseLeave () {
+  handleMouseLeave = () => {
     if (this.props.animate) return;
     this.setState({ hovering: false });
   }
 
   render () {
-    const { src, size, staticSrc, animate, inline } = this.props;
+    const { account, size, animate, inline } = this.props;
     const { hovering } = this.state;
+
+    const src = account.get('avatar');
+    const staticSrc = account.get('avatar_static');
 
     let className = 'account__avatar';
 
@@ -38,7 +50,7 @@ class Avatar extends React.PureComponent {
       ...this.props.style,
       width: `${size}px`,
       height: `${size}px`,
-      backgroundSize: `${size}px ${size}px`
+      backgroundSize: `${size}px ${size}px`,
     };
 
     if (hovering || animate) {
@@ -58,20 +70,3 @@ class Avatar extends React.PureComponent {
   }
 
 }
-
-Avatar.propTypes = {
-  src: PropTypes.string.isRequired,
-  staticSrc: PropTypes.string,
-  size: PropTypes.number.isRequired,
-  style: PropTypes.object,
-  animate: PropTypes.bool,
-  inline: PropTypes.bool
-};
-
-Avatar.defaultProps = {
-  animate: false,
-  size: 20,
-  inline: false
-};
-
-export default Avatar;

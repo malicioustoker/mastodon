@@ -4,13 +4,12 @@ import appReducer from '../reducers';
 import loadingBarMiddleware from '../middleware/loading_bar';
 import errorsMiddleware from '../middleware/errors';
 import soundsMiddleware from '../middleware/sounds';
-import Immutable from 'immutable';
 
 export default function configureStore() {
   return createStore(appReducer, compose(applyMiddleware(
     thunk,
     loadingBarMiddleware({ promiseTypeSuffixes: ['REQUEST', 'SUCCESS', 'FAIL'] }),
     errorsMiddleware(),
-    soundsMiddleware()
-  ), window.devToolsExtension ? window.devToolsExtension() : f => f));
+    soundsMiddleware(),
+  ), window.__REDUX_DEVTOOLS_EXTENSION__ ? window.__REDUX_DEVTOOLS_EXTENSION__() : f => f));
 };

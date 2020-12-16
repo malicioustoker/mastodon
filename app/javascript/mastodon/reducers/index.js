@@ -1,38 +1,82 @@
 import { combineReducers } from 'redux-immutable';
+import dropdown_menu from './dropdown_menu';
 import timelines from './timelines';
 import meta from './meta';
-import compose from './compose';
 import alerts from './alerts';
 import { loadingBarReducer } from 'react-redux-loading-bar';
 import modal from './modal';
 import user_lists from './user_lists';
+import domain_lists from './domain_lists';
 import accounts from './accounts';
 import accounts_counters from './accounts_counters';
 import statuses from './statuses';
 import relationships from './relationships';
-import search from './search';
-import notifications from './notifications';
 import settings from './settings';
+import push_notifications from './push_notifications';
 import status_lists from './status_lists';
-import cards from './cards';
+import mutes from './mutes';
+import blocks from './blocks';
 import reports from './reports';
+import contexts from './contexts';
+import compose from './compose';
+import search from './search';
+import media_attachments from './media_attachments';
+import notifications from './notifications';
+import height_cache from './height_cache';
+import custom_emojis from './custom_emojis';
+import lists from './lists';
+import listEditor from './list_editor';
+import listAdder from './list_adder';
+import filters from './filters';
+import conversations from './conversations';
+import suggestions from './suggestions';
+import polls from './polls';
+import identity_proofs from './identity_proofs';
+import trends from './trends';
+import missed_updates from './missed_updates';
+import announcements from './announcements';
+import markers from './markers';
+import picture_in_picture from './picture_in_picture';
 
-export default combineReducers({
+const reducers = {
+  announcements,
+  dropdown_menu,
   timelines,
   meta,
-  compose,
   alerts,
   loadingBar: loadingBarReducer,
   modal,
   user_lists,
+  domain_lists,
   status_lists,
   accounts,
   accounts_counters,
   statuses,
   relationships,
-  search,
-  notifications,
   settings,
-  cards,
-  reports
-});
+  push_notifications,
+  mutes,
+  blocks,
+  reports,
+  contexts,
+  compose,
+  search,
+  media_attachments,
+  notifications,
+  height_cache,
+  custom_emojis,
+  identity_proofs,
+  lists,
+  listEditor,
+  listAdder,
+  filters,
+  conversations,
+  suggestions,
+  polls,
+  trends,
+  missed_updates,
+  markers,
+  picture_in_picture,
+};
+
+export default combineReducers(reducers);

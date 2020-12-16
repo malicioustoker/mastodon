@@ -1,130 +1,129 @@
+import { debounce } from 'lodash';
 import React from 'react';
-import Status from './status';
 import ImmutablePropTypes from 'react-immutable-proptypes';
-import { ScrollContainer } from 'react-router-scroll';
 import PropTypes from 'prop-types';
 import StatusContainer from '../containers/status_container';
-import LoadMore from './load_more';
 import ImmutablePureComponent from 'react-immutable-pure-component';
+import LoadGap from './load_gap';
+import ScrollableList from './scrollable_list';
+import RegenerationIndicator from 'mastodon/components/regeneration_indicator';
 
-class StatusList extends ImmutablePureComponent {
+export default class StatusList extends ImmutablePureComponent {
 
-  constructor (props, context) {
-    super(props, context);
-    this.handleScroll = this.handleScroll.bind(this);
-    this.setRef = this.setRef.bind(this);
-    this.handleLoadMore = this.handleLoadMore.bind(this);
+  static propTypes = {
+    scrollKey: PropTypes.string.isRequired,
+    statusIds: ImmutablePropTypes.list.isRequired,
+    featuredStatusIds: ImmutablePropTypes.list,
+    onLoadMore: PropTypes.func,
+    onScrollToTop: PropTypes.func,
+    onScroll: PropTypes.func,
+    trackScroll: PropTypes.bool,
+    shouldUpdateScroll: PropTypes.func,
+    isLoading: PropTypes.bool,
+    isPartial: PropTypes.bool,
+    hasMore: PropTypes.bool,
+    prepend: PropTypes.node,
+    emptyMessage: PropTypes.node,
+    alwaysPrepend: PropTypes.bool,
+    timelineId: PropTypes.string,
+  };
+
+  static defaultProps = {
+    trackScroll: true,
+  };
+
+  getFeaturedStatusCount = () => {
+    return this.props.featuredStatusIds ? this.props.featuredStatusIds.size : 0;
   }
 
-  handleScroll (e) {
-    const { scrollTop, scrollHeight, clientHeight } = e.target;
-    const offset = scrollHeight - scrollTop - clientHeight;
-    this._oldScrollPosition = scrollHeight - scrollTop;
-
-    if (250 > offset && this.props.onScrollToBottom && !this.props.isLoading) {
-      this.props.onScrollToBottom();
-    } else if (scrollTop < 100 && this.props.onScrollToTop) {
-      this.props.onScrollToTop();
-    } else if (this.props.onScroll) {
-      this.props.onScroll();
+  getCurrentStatusIndex = (id, featured) => {
+    if (featured) {
+      return this.props.featuredStatusIds.indexOf(id);
+    } else {
+      return this.props.statusIds.indexOf(id) + this.getFeaturedStatusCount();
     }
   }
 
-  componentDidMount () {
-    this.attachScrollListener();
+  handleMoveUp = (id, featured) => {
+    const elementIndex = this.getCurrentStatusIndex(id, featured) - 1;
+    this._selectChild(elementIndex, true);
   }
 
-  componentDidUpdate (prevProps) {
-    if (this.node.scrollTop > 0 && (prevProps.statusIds.size < this.props.statusIds.size && prevProps.statusIds.first() !== this.props.statusIds.first() && !!this._oldScrollPosition)) {
-      this.node.scrollTop = this.node.scrollHeight - this._oldScrollPosition;
+  handleMoveDown = (id, featured) => {
+    const elementIndex = this.getCurrentStatusIndex(id, featured) + 1;
+    this._selectChild(elementIndex, false);
+  }
+
+  handleLoadOlder = debounce(() => {
+    this.props.onLoadMore(this.props.statusIds.size > 0 ? this.props.statusIds.last() : undefined);
+  }, 300, { leading: true })
+
+  _selectChild (index, align_top) {
+    const container = this.node.node;
+    const element = container.querySelector(`article:nth-of-type(${index + 1}) .focusable`);
+
+    if (element) {
+      if (align_top && container.scrollTop > element.offsetTop) {
+        element.scrollIntoView(true);
+      } else if (!align_top && container.scrollTop + container.clientHeight < element.offsetTop + element.offsetHeight) {
+        element.scrollIntoView(false);
+      }
+      element.focus();
     }
   }
 
-  componentWillUnmount () {
-    this.detachScrollListener();
-  }
-
-  attachScrollListener () {
-    this.node.addEventListener('scroll', this.handleScroll);
-  }
-
-  detachScrollListener () {
-    this.node.removeEventListener('scroll', this.handleScroll);
-  }
-
-  setRef (c) {
+  setRef = c => {
     this.node = c;
   }
 
-  handleLoadMore (e) {
-    e.preventDefault();
-    this.props.onScrollToBottom();
-  }
-
   render () {
-    const { statusIds, onScrollToBottom, scrollKey, shouldUpdateScroll, isLoading, isUnread, hasMore, prepend, emptyMessage } = this.props;
+    const { statusIds, featuredStatusIds, shouldUpdateScroll, onLoadMore, timelineId, ...other }  = this.props;
+    const { isLoading, isPartial } = other;
 
-    let loadMore       = '';
-    let scrollableArea = '';
-    let unread         = '';
-
-    if (!isLoading && statusIds.size > 0 && hasMore) {
-      loadMore = <LoadMore onClick={this.handleLoadMore} />;
+    if (isPartial) {
+      return <RegenerationIndicator />;
     }
 
-    if (isUnread) {
-      unread = <div className='status-list__unread-indicator' />;
-    }
+    let scrollableContent = (isLoading || statusIds.size > 0) ? (
+      statusIds.map((statusId, index) => statusId === null ? (
+        <LoadGap
+          key={'gap:' + statusIds.get(index + 1)}
+          disabled={isLoading}
+          maxId={index > 0 ? statusIds.get(index - 1) : null}
+          onClick={onLoadMore}
+        />
+      ) : (
+        <StatusContainer
+          key={statusId}
+          id={statusId}
+          onMoveUp={this.handleMoveUp}
+          onMoveDown={this.handleMoveDown}
+          contextType={timelineId}
+          scrollKey={this.props.scrollKey}
+          showThread
+        />
+      ))
+    ) : null;
 
-    if (isLoading || statusIds.size > 0 || !emptyMessage) {
-      scrollableArea = (
-        <div className='scrollable' ref={this.setRef}>
-          {unread}
-
-          <div className='status-list'>
-            {prepend}
-
-            {statusIds.map((statusId) => {
-              return <StatusContainer key={statusId} id={statusId} />;
-            })}
-
-            {loadMore}
-          </div>
-        </div>
-      );
-    } else {
-      scrollableArea = (
-        <div className='empty-column-indicator' ref={this.setRef}>
-          {emptyMessage}
-        </div>
-      );
+    if (scrollableContent && featuredStatusIds) {
+      scrollableContent = featuredStatusIds.map(statusId => (
+        <StatusContainer
+          key={`f-${statusId}`}
+          id={statusId}
+          featured
+          onMoveUp={this.handleMoveUp}
+          onMoveDown={this.handleMoveDown}
+          contextType={timelineId}
+          showThread
+        />
+      )).concat(scrollableContent);
     }
 
     return (
-      <ScrollContainer scrollKey={scrollKey} shouldUpdateScroll={shouldUpdateScroll}>
-        {scrollableArea}
-      </ScrollContainer>
+      <ScrollableList {...other} showLoading={isLoading && statusIds.size === 0} onLoadMore={onLoadMore && this.handleLoadOlder} shouldUpdateScroll={shouldUpdateScroll} ref={this.setRef}>
+        {scrollableContent}
+      </ScrollableList>
     );
   }
 
 }
-
-StatusList.propTypes = {
-  scrollKey: PropTypes.string.isRequired,
-  statusIds: ImmutablePropTypes.list.isRequired,
-  onScrollToBottom: PropTypes.func,
-  onScrollToTop: PropTypes.func,
-  onScroll: PropTypes.func,
-  shouldUpdateScroll: PropTypes.func,
-  isLoading: PropTypes.bool,
-  isUnread: PropTypes.bool,
-  hasMore: PropTypes.bool,
-  prepend: PropTypes.node,
-  emptyMessage: PropTypes.node
-};
-
-StatusList.defaultProps = {
-  trackScroll: true
-};
-
-export default StatusList;

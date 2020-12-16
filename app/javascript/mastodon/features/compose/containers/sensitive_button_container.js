@@ -1,51 +1,71 @@
 import React from 'react';
 import { connect } from 'react-redux';
 import PropTypes from 'prop-types';
-import TextIconButton from '../components/text_icon_button';
-import { changeComposeSensitivity } from '../../../actions/compose';
-import { Motion, spring } from 'react-motion';
-import { injectIntl, defineMessages } from 'react-intl';
+import classNames from 'classnames';
+import { changeComposeSensitivity } from 'mastodon/actions/compose';
+import { injectIntl, defineMessages, FormattedMessage } from 'react-intl';
 
 const messages = defineMessages({
-  title: { id: 'compose_form.sensitive', defaultMessage: 'Mark media as sensitive' }
+  marked: {
+    id: 'compose_form.sensitive.marked',
+    defaultMessage: '{count, plural, one {Media is marked as sensitive} other {Media is marked as sensitive}}',
+  },
+  unmarked: {
+    id: 'compose_form.sensitive.unmarked',
+    defaultMessage: '{count, plural, one {Media is not marked as sensitive} other {Media is not marked as sensitive}}',
+  },
 });
 
 const mapStateToProps = state => ({
-  visible: state.getIn(['compose', 'media_attachments']).size > 0,
-  active: state.getIn(['compose', 'sensitive'])
+  active: state.getIn(['compose', 'sensitive']),
+  disabled: state.getIn(['compose', 'spoiler']),
+  mediaCount: state.getIn(['compose', 'media_attachments']).size,
 });
 
 const mapDispatchToProps = dispatch => ({
 
   onClick () {
     dispatch(changeComposeSensitivity());
-  }
+  },
 
 });
 
 class SensitiveButton extends React.PureComponent {
 
+  static propTypes = {
+    active: PropTypes.bool,
+    disabled: PropTypes.bool,
+    mediaCount: PropTypes.number,
+    onClick: PropTypes.func.isRequired,
+    intl: PropTypes.object.isRequired,
+  };
+
   render () {
-    const { visible, active, onClick, intl } = this.props;
+    const { active, disabled, mediaCount, onClick, intl } = this.props;
 
     return (
-      <Motion defaultStyle={{ scale: 0.87 }} style={{ scale: spring(visible ? 1 : 0.87, { stiffness: 200, damping: 3 }) }}>
-        {({ scale }) =>
-          <div style={{ display: visible ? 'block' : 'none', transform: `translateZ(0) scale(${scale})` }}>
-            <TextIconButton onClick={onClick} label='NSFW' title={intl.formatMessage(messages.title)} active={active} />
-          </div>
-        }
-      </Motion>
+      <div className='compose-form__sensitive-button'>
+        <label className={classNames('icon-button', { active })} title={intl.formatMessage(active ? messages.marked : messages.unmarked, { count: mediaCount })}>
+          <input
+            name='mark-sensitive'
+            type='checkbox'
+            checked={active}
+            onChange={onClick}
+            disabled={disabled}
+          />
+
+          <span className={classNames('checkbox', { active })} />
+
+          <FormattedMessage
+            id='compose_form.sensitive.hide'
+            defaultMessage='{count, plural, one {Mark media as sensitive} other {Mark media as sensitive}}'
+            values={{ count: mediaCount }}
+          />
+        </label>
+      </div>
     );
   }
 
 }
-
-SensitiveButton.propTypes = {
-  visible: PropTypes.bool,
-  active: PropTypes.bool,
-  onClick: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired
-};
 
 export default connect(mapStateToProps, mapDispatchToProps)(injectIntl(SensitiveButton));

@@ -1,23 +1,19 @@
 # frozen_string_literal: true
 
 class MuteService < BaseService
-  def call(account, target_account)
+  def call(account, target_account, notifications: nil, duration: 0)
     return if account.id == target_account.id
-    clear_home_timeline(account, target_account)
-    account.mute!(target_account)
-  end
 
-  private
+    mute = account.mute!(target_account, notifications: notifications, duration: duration)
 
-  def clear_home_timeline(account, target_account)
-    home_key = FeedManager.instance.key(:home, account.id)
-
-    target_account.statuses.select('id').reorder(nil).find_each do |status|
-      redis.zrem(home_key, status.id)
+    if mute.hide_notifications?
+      BlockWorker.perform_async(account.id, target_account.id)
+    else
+      MuteWorker.perform_async(account.id, target_account.id)
     end
-  end
 
-  def redis
-    Redis.current
+    DeleteMuteWorker.perform_at(duration.seconds, mute.id) if duration != 0
+
+    mute
   end
 end

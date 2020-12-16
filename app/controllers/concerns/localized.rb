@@ -4,25 +4,30 @@ module Localized
   extend ActiveSupport::Concern
 
   included do
-    before_action :set_locale
+    around_action :set_locale
+  end
+
+  def set_locale
+    locale   = current_user.locale if respond_to?(:user_signed_in?) && user_signed_in?
+    locale ||= session[:locale] ||= default_locale
+    locale   = default_locale unless I18n.available_locales.include?(locale.to_sym)
+
+    I18n.with_locale(locale) do
+      yield
+    end
   end
 
   private
 
-  def set_locale
-    I18n.locale = default_locale
-    I18n.locale = current_user.locale if user_signed_in?
-  rescue I18n::InvalidLocale
-    I18n.locale = default_locale
-  end
-
   def default_locale
-    ENV.fetch('DEFAULT_LOCALE') do
-      user_supplied_locale || I18n.default_locale
+    if ENV['DEFAULT_LOCALE'].present?
+      I18n.default_locale
+    else
+      request_locale || I18n.default_locale
     end
   end
 
-  def user_supplied_locale
+  def request_locale
     http_accept_language.language_region_compatible_from(I18n.available_locales)
   end
 end

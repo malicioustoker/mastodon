@@ -1,64 +1,80 @@
 # frozen_string_literal: true
 
 class FollowService < BaseService
-  include StreamEntryRenderer
+  include Redisable
+  include Payloadable
 
   # Follow a remote user, notify remote user about the follow
   # @param [Account] source_account From which to follow
-  # @param [String] uri User URI to follow in the form of username@domain
-  def call(source_account, uri)
-    target_account = FollowRemoteAccountService.new.call(uri)
+  # @param [String, Account] uri User URI to follow in the form of username@domain (or account record)
+  # @param [Hash] options
+  # @option [Boolean] :reblogs Whether or not to show reblogs, defaults to true
+  # @option [Boolean] :notify Whether to create notifications about new posts, defaults to false
+  # @option [Boolean] :bypass_locked
+  # @option [Boolean] :with_rate_limit
+  def call(source_account, target_account, options = {})
+    @source_account = source_account
+    @target_account = ResolveAccountService.new.call(target_account, skip_webfinger: true)
+    @options        = { bypass_locked: false, with_rate_limit: false }.merge(options)
 
-    raise ActiveRecord::RecordNotFound if target_account.nil? || target_account.id == source_account.id || target_account.suspended?
-    raise Mastodon::NotPermittedError  if target_account.blocking?(source_account) || source_account.blocking?(target_account)
+    raise ActiveRecord::RecordNotFound if following_not_possible?
+    raise Mastodon::NotPermittedError  if following_not_allowed?
 
-    if target_account.locked?
-      request_follow(source_account, target_account)
-    else
-      direct_follow(source_account, target_account)
+    if @source_account.following?(@target_account)
+      return change_follow_options!
+    elsif @source_account.requested?(@target_account)
+      return change_follow_request_options!
+    end
+
+    ActivityTracker.increment('activity:interactions')
+
+    if (@target_account.locked? && !@options[:bypass_locked]) || @source_account.silenced? || @target_account.activitypub?
+      request_follow!
+    elsif @target_account.local?
+      direct_follow!
     end
   end
 
   private
 
-  def request_follow(source_account, target_account)
-    follow_request = FollowRequest.create!(account: source_account, target_account: target_account)
+  def following_not_possible?
+    @target_account.nil? || @target_account.id == @source_account.id || @target_account.suspended?
+  end
 
-    if target_account.local?
-      NotifyService.new.call(target_account, follow_request)
-    else
-      NotificationWorker.perform_async(build_follow_request_xml(follow_request), source_account.id, target_account.id)
-      AfterRemoteFollowRequestWorker.perform_async(follow_request.id)
+  def following_not_allowed?
+    @target_account.blocking?(@source_account) || @source_account.blocking?(@target_account) || @target_account.moved? || (!@target_account.local? && @target_account.ostatus?) || @source_account.domain_blocking?(@target_account.domain)
+  end
+
+  def change_follow_options!
+    @source_account.follow!(@target_account, reblogs: @options[:reblogs], notify: @options[:notify])
+  end
+
+  def change_follow_request_options!
+    @source_account.request_follow!(@target_account, reblogs: @options[:reblogs], notify: @options[:notify])
+  end
+
+  def request_follow!
+    follow_request = @source_account.request_follow!(@target_account, reblogs: @options[:reblogs], notify: @options[:notify], rate_limit: @options[:with_rate_limit])
+
+    if @target_account.local?
+      LocalNotificationWorker.perform_async(@target_account.id, follow_request.id, follow_request.class.name, :follow_request)
+    elsif @target_account.activitypub?
+      ActivityPub::DeliveryWorker.perform_async(build_json(follow_request), @source_account.id, @target_account.inbox_url)
     end
 
     follow_request
   end
 
-  def direct_follow(source_account, target_account)
-    follow = source_account.follow!(target_account)
+  def direct_follow!
+    follow = @source_account.follow!(@target_account, reblogs: @options[:reblogs], notify: @options[:notify], rate_limit: @options[:with_rate_limit])
 
-    if target_account.local?
-      NotifyService.new.call(target_account, follow)
-    else
-      SubscribeService.new.call(target_account) unless target_account.subscribed?
-      NotificationWorker.perform_async(build_follow_xml(follow), source_account.id, target_account.id)
-      AfterRemoteFollowWorker.perform_async(follow.id)
-    end
-
-    MergeWorker.perform_async(target_account.id, source_account.id)
+    LocalNotificationWorker.perform_async(@target_account.id, follow.id, follow.class.name, :follow)
+    MergeWorker.perform_async(@target_account.id, @source_account.id)
 
     follow
   end
 
-  def redis
-    Redis.current
-  end
-
-  def build_follow_request_xml(follow_request)
-    AtomSerializer.render(AtomSerializer.new.follow_request_salmon(follow_request))
-  end
-
-  def build_follow_xml(follow)
-    AtomSerializer.render(AtomSerializer.new.follow_salmon(follow))
+  def build_json(follow_request)
+    Oj.dump(serialize_payload(follow_request, ActivityPub::FollowSerializer))
   end
 end

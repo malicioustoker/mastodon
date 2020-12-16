@@ -1,0 +1,17 @@
+---
+sv:
+  activerecord:
+    attributes:
+      poll:
+        expires_at: Tidsgräns
+        options: Val
+    errors:
+      models:
+        account:
+          attributes:
+            username:
+              invalid: endast bokstäver, siffror och understrykning
+        status:
+          attributes:
+            reblog:
+              taken: av status finns redan

@@ -1,28 +1,45 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { defineMessages, injectIntl, FormattedMessage } from 'react-intl';
+import { injectIntl, FormattedMessage } from 'react-intl';
 import Button from '../../../components/button';
 
+export default @injectIntl
 class ConfirmationModal extends React.PureComponent {
 
-  constructor (props, context) {
-    super(props, context);
-    this.handleClick = this.handleClick.bind(this);
-    this.handleCancel = this.handleCancel.bind(this);
+  static propTypes = {
+    message: PropTypes.node.isRequired,
+    confirm: PropTypes.string.isRequired,
+    onClose: PropTypes.func.isRequired,
+    onConfirm: PropTypes.func.isRequired,
+    secondary: PropTypes.string,
+    onSecondary: PropTypes.func,
+    intl: PropTypes.object.isRequired,
+  };
+
+  componentDidMount() {
+    this.button.focus();
   }
 
-  handleClick () {
+  handleClick = () => {
     this.props.onClose();
     this.props.onConfirm();
   }
 
-  handleCancel (e) {
-    e.preventDefault();
+  handleSecondary = () => {
+    this.props.onClose();
+    this.props.onSecondary();
+  }
+
+  handleCancel = () => {
     this.props.onClose();
   }
 
+  setRef = (c) => {
+    this.button = c;
+  }
+
   render () {
-    const { intl, message, confirm, onConfirm, onClose } = this.props;
+    const { message, confirm, secondary } = this.props;
 
     return (
       <div className='modal-root__modal confirmation-modal'>
@@ -31,21 +48,16 @@ class ConfirmationModal extends React.PureComponent {
         </div>
 
         <div className='confirmation-modal__action-bar'>
-          <div><a href='#' onClick={this.handleCancel}><FormattedMessage id='confirmation_modal.cancel' defaultMessage='Cancel' /></a></div>
-          <Button text={confirm} onClick={this.handleClick} />
+          <Button onClick={this.handleCancel} className='confirmation-modal__cancel-button'>
+            <FormattedMessage id='confirmation_modal.cancel' defaultMessage='Cancel' />
+          </Button>
+          {secondary !== undefined && (
+            <Button text={secondary} onClick={this.handleSecondary} className='confirmation-modal__secondary-button' />
+          )}
+          <Button text={confirm} onClick={this.handleClick} ref={this.setRef} />
         </div>
       </div>
     );
   }
 
 }
-
-ConfirmationModal.propTypes = {
-  message: PropTypes.node.isRequired,
-  confirm: PropTypes.string.isRequired,
-  onClose: PropTypes.func.isRequired,
-  onConfirm: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired
-};
-
-export default injectIntl(ConfirmationModal);

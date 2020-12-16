@@ -1,4 +1,5 @@
-import api, { getLinks } from '../api'
+import api, { getLinks } from '../api';
+import { importFetchedStatuses } from './importer';
 
 export const FAVOURITED_STATUSES_FETCH_REQUEST = 'FAVOURITED_STATUSES_FETCH_REQUEST';
 export const FAVOURITED_STATUSES_FETCH_SUCCESS = 'FAVOURITED_STATUSES_FETCH_SUCCESS';
@@ -10,10 +11,15 @@ export const FAVOURITED_STATUSES_EXPAND_FAIL    = 'FAVOURITED_STATUSES_EXPAND_FA
 
 export function fetchFavouritedStatuses() {
   return (dispatch, getState) => {
+    if (getState().getIn(['status_lists', 'favourites', 'isLoading'])) {
+      return;
+    }
+
     dispatch(fetchFavouritedStatusesRequest());
 
     api(getState).get('/api/v1/favourites').then(response => {
       const next = getLinks(response).refs.find(link => link.rel === 'next');
+      dispatch(importFetchedStatuses(response.data));
       dispatch(fetchFavouritedStatusesSuccess(response.data, next ? next.uri : null));
     }).catch(error => {
       dispatch(fetchFavouritedStatusesFail(error));
@@ -23,7 +29,8 @@ export function fetchFavouritedStatuses() {
 
 export function fetchFavouritedStatusesRequest() {
   return {
-    type: FAVOURITED_STATUSES_FETCH_REQUEST
+    type: FAVOURITED_STATUSES_FETCH_REQUEST,
+    skipLoading: true,
   };
 };
 
@@ -31,14 +38,16 @@ export function fetchFavouritedStatusesSuccess(statuses, next) {
   return {
     type: FAVOURITED_STATUSES_FETCH_SUCCESS,
     statuses,
-    next
+    next,
+    skipLoading: true,
   };
 };
 
 export function fetchFavouritedStatusesFail(error) {
   return {
     type: FAVOURITED_STATUSES_FETCH_FAIL,
-    error
+    error,
+    skipLoading: true,
   };
 };
 
@@ -46,7 +55,7 @@ export function expandFavouritedStatuses() {
   return (dispatch, getState) => {
     const url = getState().getIn(['status_lists', 'favourites', 'next'], null);
 
-    if (url === null) {
+    if (url === null || getState().getIn(['status_lists', 'favourites', 'isLoading'])) {
       return;
     }
 
@@ -54,6 +63,7 @@ export function expandFavouritedStatuses() {
 
     api(getState).get(url).then(response => {
       const next = getLinks(response).refs.find(link => link.rel === 'next');
+      dispatch(importFetchedStatuses(response.data));
       dispatch(expandFavouritedStatusesSuccess(response.data, next ? next.uri : null));
     }).catch(error => {
       dispatch(expandFavouritedStatusesFail(error));
@@ -63,7 +73,7 @@ export function expandFavouritedStatuses() {
 
 export function expandFavouritedStatusesRequest() {
   return {
-    type: FAVOURITED_STATUSES_EXPAND_REQUEST
+    type: FAVOURITED_STATUSES_EXPAND_REQUEST,
   };
 };
 
@@ -71,13 +81,13 @@ export function expandFavouritedStatusesSuccess(statuses, next) {
   return {
     type: FAVOURITED_STATUSES_EXPAND_SUCCESS,
     statuses,
-    next
+    next,
   };
 };
 
 export function expandFavouritedStatusesFail(error) {
   return {
     type: FAVOURITED_STATUSES_EXPAND_FAIL,
-    error
+    error,
   };
 };

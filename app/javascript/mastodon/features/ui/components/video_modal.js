@@ -1,40 +1,85 @@
 import React from 'react';
-import LoadingIndicator from '../../../components/loading_indicator';
 import ImmutablePropTypes from 'react-immutable-proptypes';
 import PropTypes from 'prop-types';
-import ExtendedVideoPlayer from '../../../components/extended_video_player';
-import { defineMessages, injectIntl } from 'react-intl';
-import IconButton from '../../../components/icon_button';
+import Video from 'mastodon/features/video';
 import ImmutablePureComponent from 'react-immutable-pure-component';
+import Footer from 'mastodon/features/picture_in_picture/components/footer';
+import { getAverageFromBlurhash } from 'mastodon/blurhash';
 
-const messages = defineMessages({
-  close: { id: 'lightbox.close', defaultMessage: 'Close' }
-});
+export const previewState = 'previewVideoModal';
 
-class VideoModal extends ImmutablePureComponent {
+export default class VideoModal extends ImmutablePureComponent {
+
+  static propTypes = {
+    media: ImmutablePropTypes.map.isRequired,
+    statusId: PropTypes.string,
+    options: PropTypes.shape({
+      startTime: PropTypes.number,
+      autoPlay: PropTypes.bool,
+      defaultVolume: PropTypes.number,
+    }),
+    onClose: PropTypes.func.isRequired,
+    onChangeBackgroundColor: PropTypes.func.isRequired,
+  };
+
+  static contextTypes = {
+    router: PropTypes.object,
+  };
+
+  componentDidMount () {
+    const { router } = this.context;
+    const { media, onChangeBackgroundColor, onClose } = this.props;
+
+    if (router) {
+      router.history.push(router.history.location.pathname, previewState);
+      this.unlistenHistory = router.history.listen(() => onClose());
+    }
+
+    const backgroundColor = getAverageFromBlurhash(media.get('blurhash'));
+
+    if (backgroundColor) {
+      onChangeBackgroundColor(backgroundColor);
+    }
+  }
+
+  componentWillUnmount () {
+    const { router } = this.context;
+
+    if (router) {
+      this.unlistenHistory();
+
+      if (router.history.location.state === previewState) {
+        router.history.goBack();
+      }
+    }
+  }
 
   render () {
-    const { media, intl, time, onClose } = this.props;
-
-    const url = media.get('url');
+    const { media, statusId, onClose } = this.props;
+    const options = this.props.options || {};
 
     return (
-      <div className='modal-root__modal media-modal'>
-        <div>
-          <div className='media-modal__close'><IconButton title={intl.formatMessage(messages.close)} icon='times' overlay onClick={onClose} /></div>
-          <ExtendedVideoPlayer src={url} muted={false} controls={true} time={time} />
+      <div className='modal-root__modal video-modal'>
+        <div className='video-modal__container'>
+          <Video
+            preview={media.get('preview_url')}
+            frameRate={media.getIn(['meta', 'original', 'frame_rate'])}
+            blurhash={media.get('blurhash')}
+            src={media.get('url')}
+            currentTime={options.startTime}
+            autoPlay={options.autoPlay}
+            volume={options.defaultVolume}
+            onCloseVideo={onClose}
+            detailed
+            alt={media.get('description')}
+          />
+        </div>
+
+        <div className='media-modal__overlay'>
+          {statusId && <Footer statusId={statusId} withOpenButton onClose={onClose} />}
         </div>
       </div>
     );
   }
 
 }
-
-VideoModal.propTypes = {
-  media: ImmutablePropTypes.map.isRequired,
-  time: PropTypes.number,
-  onClose: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired
-};
-
-export default injectIntl(VideoModal);

@@ -1,12 +1,20 @@
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Motion, spring } from 'react-motion';
-import { FormattedMessage } from 'react-intl';
+import Motion from '../../ui/util/optional_motion';
+import spring from 'react-motion/lib/spring';
+import Icon from 'mastodon/components/icon';
 
-class UploadProgress extends React.PureComponent {
+export default class UploadProgress extends React.PureComponent {
+
+  static propTypes = {
+    active: PropTypes.bool,
+    progress: PropTypes.number,
+    icon: PropTypes.string.isRequired,
+    message: PropTypes.node.isRequired,
+  };
 
   render () {
-    const { active, progress } = this.props;
+    const { active, progress, icon, message } = this.props;
 
     if (!active) {
       return null;
@@ -15,11 +23,11 @@ class UploadProgress extends React.PureComponent {
     return (
       <div className='upload-progress'>
         <div className='upload-progress__icon'>
-          <i className='fa fa-upload' />
+          <Icon id={icon} />
         </div>
 
         <div className='upload-progress__message'>
-          <FormattedMessage id='upload_progress.label' defaultMessage='Uploading...' />
+          {message}
 
           <div className='upload-progress__backdrop'>
             <Motion defaultStyle={{ width: 0 }} style={{ width: spring(progress) }}>
@@ -34,10 +42,3 @@ class UploadProgress extends React.PureComponent {
   }
 
 }
-
-UploadProgress.propTypes = {
-  active: PropTypes.bool,
-  progress: PropTypes.number
-};
-
-export default UploadProgress;

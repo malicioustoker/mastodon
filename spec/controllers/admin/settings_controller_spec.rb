@@ -5,10 +5,6 @@ require 'rails_helper'
 RSpec.describe Admin::SettingsController, type: :controller do
   render_views
 
-  before do
-    Rails.cache.clear
-  end
-
   describe 'When signed in as an admin' do
     before do
       sign_in Fabricate(:user, admin: true), scope: :user
@@ -18,20 +14,28 @@ RSpec.describe Admin::SettingsController, type: :controller do
       it 'returns http success' do
         get :edit
 
-        expect(response).to have_http_status(:success)
+        expect(response).to have_http_status(200)
       end
     end
 
     describe 'PUT #update' do
+      before do
+        allow_any_instance_of(Form::AdminSettings).to receive(:valid?).and_return(true)
+      end
+
       describe 'for a record that doesnt exist' do
-        after do
+        around do |example|
+          before = Setting.site_extended_description
+          Setting.site_extended_description = nil
+          example.run
+          Setting.site_extended_description = before
           Setting.new_setting_key = nil
         end
 
         it 'cannot create a setting value for a non-admin key' do
-          expect(Setting.new_setting_key).to be_nil
+          expect(Setting.new_setting_key).to be_blank
 
-          patch :update, params: { new_setting_key: 'New key value' }
+          patch :update, params: { form_admin_settings: { new_setting_key: 'New key value' } }
 
           expect(response).to redirect_to(edit_admin_settings_path)
           expect(Setting.new_setting_key).to be_nil
@@ -40,27 +44,27 @@ RSpec.describe Admin::SettingsController, type: :controller do
         it 'creates a settings value that didnt exist before for eligible key' do
           expect(Setting.site_extended_description).to be_blank
 
-          patch :update, params: { site_extended_description: 'New key value' }
+          patch :update, params: { form_admin_settings: { site_extended_description: 'New key value' } }
 
           expect(response).to redirect_to(edit_admin_settings_path)
           expect(Setting.site_extended_description).to eq 'New key value'
         end
       end
 
-      it 'updates a settings value' do
-        Setting.site_title = 'Original'
-        patch :update, params: { site_title: 'New title' }
+      context do
+        around do |example|
+          site_title = Setting.site_title
+          example.run
+          Setting.site_title = site_title
+        end
 
-        expect(response).to redirect_to(edit_admin_settings_path)
-        expect(Setting.site_title).to eq 'New title'
-      end
+        it 'updates a settings value' do
+          Setting.site_title = 'Original'
+          patch :update, params: { form_admin_settings: { site_title: 'New title' } }
 
-      it 'typecasts open_registrations to boolean' do
-        Setting.open_registrations = false
-        patch :update, params: { open_registrations: 'true' }
-
-        expect(response).to redirect_to(edit_admin_settings_path)
-        expect(Setting.open_registrations).to eq true
+          expect(response).to redirect_to(edit_admin_settings_path)
+          expect(Setting.site_title).to eq 'New title'
+        end
       end
     end
   end

@@ -1,73 +1,62 @@
 import { connect } from 'react-redux';
 import StatusList from '../../../components/status_list';
-import { expandTimeline, scrollTopTimeline } from '../../../actions/timelines';
-import Immutable from 'immutable';
+import { scrollTopTimeline, loadPending } from '../../../actions/timelines';
+import { Map as ImmutableMap, List as ImmutableList } from 'immutable';
 import { createSelector } from 'reselect';
-import { debounce } from 'react-decoration';
+import { debounce } from 'lodash';
+import { me } from '../../../initial_state';
 
-const makeGetStatusIds = () => createSelector([
-  (state, { type }) => state.getIn(['settings', type], Immutable.Map()),
-  (state, { type }) => state.getIn(['timelines', type, 'items'], Immutable.List()),
+const makeGetStatusIds = (pending = false) => createSelector([
+  (state, { type }) => state.getIn(['settings', type], ImmutableMap()),
+  (state, { type }) => state.getIn(['timelines', type, pending ? 'pendingItems' : 'items'], ImmutableList()),
   (state)           => state.get('statuses'),
-  (state)           => state.getIn(['meta', 'me'])
-], (columnSettings, statusIds, statuses, me) => statusIds.filter(id => {
-  const statusForId = statuses.get(id);
-  let showStatus    = true;
+], (columnSettings, statusIds, statuses) => {
+  return statusIds.filter(id => {
+    if (id === null) return true;
 
-  if (columnSettings.getIn(['shows', 'reblog']) === false) {
-    showStatus = showStatus && statusForId.get('reblog') === null;
-  }
+    const statusForId = statuses.get(id);
+    let showStatus    = true;
 
-  if (columnSettings.getIn(['shows', 'reply']) === false) {
-    showStatus = showStatus && (statusForId.get('in_reply_to_id') === null || statusForId.get('in_reply_to_account_id') === me);
-  }
+    if (statusForId.get('account') === me) return true;
 
-  if (columnSettings.getIn(['regex', 'body'], '').trim().length > 0) {
-    try {
-      if (showStatus) {
-        const regex = new RegExp(columnSettings.getIn(['regex', 'body']).trim(), 'i');
-        showStatus = !regex.test(statusForId.get('reblog') ? statuses.getIn([statusForId.get('reblog'), 'unescaped_content']) : statusForId.get('unescaped_content'));
-      }
-    } catch(e) {
-      // Bad regex, don't affect filters
+    if (columnSettings.getIn(['shows', 'reblog']) === false) {
+      showStatus = showStatus && statusForId.get('reblog') === null;
     }
-  }
 
-  return showStatus;
-}));
+    if (columnSettings.getIn(['shows', 'reply']) === false) {
+      showStatus = showStatus && (statusForId.get('in_reply_to_id') === null || statusForId.get('in_reply_to_account_id') === me);
+    }
+
+    return showStatus;
+  });
+});
 
 const makeMapStateToProps = () => {
   const getStatusIds = makeGetStatusIds();
+  const getPendingStatusIds = makeGetStatusIds(true);
 
-  const mapStateToProps = (state, props) => ({
-    scrollKey: props.scrollKey,
-    shouldUpdateScroll: props.shouldUpdateScroll,
-    statusIds: getStatusIds(state, props),
-    isLoading: state.getIn(['timelines', props.type, 'isLoading'], true),
-    isUnread: state.getIn(['timelines', props.type, 'unread']) > 0,
-    hasMore: !!state.getIn(['timelines', props.type, 'next'])
+  const mapStateToProps = (state, { timelineId }) => ({
+    statusIds: getStatusIds(state, { type: timelineId }),
+    isLoading: state.getIn(['timelines', timelineId, 'isLoading'], true),
+    isPartial: state.getIn(['timelines', timelineId, 'isPartial'], false),
+    hasMore:   state.getIn(['timelines', timelineId, 'hasMore']),
+    numPending: getPendingStatusIds(state, { type: timelineId }).size,
   });
 
   return mapStateToProps;
 };
 
-const mapDispatchToProps = (dispatch, { type, id }) => ({
+const mapDispatchToProps = (dispatch, { timelineId }) => ({
 
-  @debounce(300, true)
-  onScrollToBottom () {
-    dispatch(scrollTopTimeline(type, false));
-    dispatch(expandTimeline(type, id));
-  },
+  onScrollToTop: debounce(() => {
+    dispatch(scrollTopTimeline(timelineId, true));
+  }, 100),
 
-  @debounce(100)
-  onScrollToTop () {
-    dispatch(scrollTopTimeline(type, true));
-  },
+  onScroll: debounce(() => {
+    dispatch(scrollTopTimeline(timelineId, false));
+  }, 100),
 
-  @debounce(100)
-  onScroll () {
-    dispatch(scrollTopTimeline(type, false));
-  }
+  onLoadPending: () => dispatch(loadPending(timelineId)),
 
 });
 

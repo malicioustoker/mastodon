@@ -4,30 +4,35 @@ import PropTypes from 'prop-types';
 import Avatar from '../../../components/avatar';
 import IconButton from '../../../components/icon_button';
 import DisplayName from '../../../components/display_name';
-import emojify from '../../../emoji';
 import { defineMessages, injectIntl } from 'react-intl';
 import ImmutablePureComponent from 'react-immutable-pure-component';
+import AttachmentList from 'mastodon/components/attachment_list';
 
 const messages = defineMessages({
-  cancel: { id: 'reply_indicator.cancel', defaultMessage: 'Cancel' }
+  cancel: { id: 'reply_indicator.cancel', defaultMessage: 'Cancel' },
 });
 
+export default @injectIntl
 class ReplyIndicator extends ImmutablePureComponent {
 
-  constructor (props, context) {
-    super(props, context);
-    this.handleClick = this.handleClick.bind(this);
-    this.handleAccountClick = this.handleAccountClick.bind(this);
-  }
+  static contextTypes = {
+    router: PropTypes.object,
+  };
 
-  handleClick () {
+  static propTypes = {
+    status: ImmutablePropTypes.map,
+    onCancel: PropTypes.func.isRequired,
+    intl: PropTypes.object.isRequired,
+  };
+
+  handleClick = () => {
     this.props.onCancel();
   }
 
-  handleAccountClick (e) {
-    if (e.button === 0) {
+  handleAccountClick = (e) => {
+    if (e.button === 0 && !(e.ctrlKey || e.metaKey)) {
       e.preventDefault();
-      this.context.router.push(`/accounts/${this.props.status.getIn(['account', 'id'])}`);
+      this.context.router.history.push(`/accounts/${this.props.status.getIn(['account', 'id'])}`);
     }
   }
 
@@ -38,34 +43,29 @@ class ReplyIndicator extends ImmutablePureComponent {
       return null;
     }
 
-    const content  = { __html: emojify(status.get('content')) };
+    const content = { __html: status.get('contentHtml') };
 
     return (
       <div className='reply-indicator'>
         <div className='reply-indicator__header'>
-          <div className='reply-indicator__cancel'><IconButton title={intl.formatMessage(messages.cancel)} icon='times' onClick={this.handleClick} /></div>
+          <div className='reply-indicator__cancel'><IconButton title={intl.formatMessage(messages.cancel)} icon='times' onClick={this.handleClick} inverted /></div>
 
           <a href={status.getIn(['account', 'url'])} onClick={this.handleAccountClick} className='reply-indicator__display-name'>
-            <div className='reply-indicator__display-avatar'><Avatar size={24} src={status.getIn(['account', 'avatar'])} staticSrc={status.getIn(['account', 'avatar_static'])} /></div>
+            <div className='reply-indicator__display-avatar'><Avatar account={status.get('account')} size={24} /></div>
             <DisplayName account={status.get('account')} />
           </a>
         </div>
 
         <div className='reply-indicator__content' dangerouslySetInnerHTML={content} />
+
+        {status.get('media_attachments').size > 0 && (
+          <AttachmentList
+            compact
+            media={status.get('media_attachments')}
+          />
+        )}
       </div>
     );
   }
 
 }
-
-ReplyIndicator.contextTypes = {
-  router: PropTypes.object
-};
-
-ReplyIndicator.propTypes = {
-  status: ImmutablePropTypes.map,
-  onCancel: PropTypes.func.isRequired,
-  intl: PropTypes.object.isRequired
-};
-
-export default injectIntl(ReplyIndicator);

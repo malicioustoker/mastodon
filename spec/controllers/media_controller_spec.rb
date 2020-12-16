@@ -18,22 +18,21 @@ describe MediaController do
       media_attachment = Fabricate(:media_attachment, status: nil)
       get :show, params: { id: media_attachment.to_param }
 
-      expect(response).to have_http_status(:missing)
+      expect(response).to have_http_status(404)
     end
 
     it 'raises when shortcode cant be found' do
       get :show, params: { id: 'missing' }
 
-      expect(response).to have_http_status(:missing)
+      expect(response).to have_http_status(404)
     end
 
     it 'raises when not permitted to view' do
-      status = Fabricate(:status)
+      status = Fabricate(:status, visibility: :direct)
       media_attachment = Fabricate(:media_attachment, status: status)
-      allow_any_instance_of(Status).to receive(:permitted?).and_return(false)
       get :show, params: { id: media_attachment.to_param }
 
-      expect(response).to have_http_status(:missing)
+      expect(response).to have_http_status(404)
     end
   end
 end

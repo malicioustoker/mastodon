@@ -10,7 +10,7 @@ describe RemoteFollowController do
       account = Fabricate(:account)
       get :new, params: { account_username: account.to_param }
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(200)
       expect(response).to render_template(:new)
       expect(assigns(:remote_follow).acct).to be_nil
     end
@@ -20,7 +20,7 @@ describe RemoteFollowController do
       account = Fabricate(:account)
       get :new, params: { account_username: account.to_param }
 
-      expect(response).to have_http_status(:success)
+      expect(response).to have_http_status(200)
       expect(response).to render_template(:new)
       expect(assigns(:remote_follow).acct).to eq 'user@example.com'
     end
@@ -35,7 +35,7 @@ describe RemoteFollowController do
       context 'when webfinger values are wrong' do
         it 'renders new when redirect url is nil' do
           resource_with_nil_link = double(link: nil)
-          allow(Goldfinger).to receive(:finger).with('acct:user@example.com').and_return(resource_with_nil_link)
+          allow_any_instance_of(WebfingerHelper).to receive(:webfinger!).with('acct:user@example.com').and_return(resource_with_nil_link)
           post :create, params: { account_username: @account.to_param, remote_follow: { acct: 'user@example.com' } }
 
           expect(response).to render_template(:new)
@@ -43,9 +43,8 @@ describe RemoteFollowController do
         end
 
         it 'renders new when template is nil' do
-          link_with_nil_template = double(template: nil)
-          resource_with_link = double(link: link_with_nil_template)
-          allow(Goldfinger).to receive(:finger).with('acct:user@example.com').and_return(resource_with_link)
+          resource_with_link = double(link: nil)
+          allow_any_instance_of(WebfingerHelper).to receive(:webfinger!).with('acct:user@example.com').and_return(resource_with_link)
           post :create, params: { account_username: @account.to_param, remote_follow: { acct: 'user@example.com' } }
 
           expect(response).to render_template(:new)
@@ -55,9 +54,8 @@ describe RemoteFollowController do
 
       context 'when webfinger values are good' do
         before do
-          link_with_template = double(template: 'http://example.com/follow_me?acct={uri}')
-          resource_with_link = double(link: link_with_template)
-          allow(Goldfinger).to receive(:finger).with('acct:user@example.com').and_return(resource_with_link)
+          resource_with_link = double(link: 'http://example.com/follow_me?acct={uri}')
+          allow_any_instance_of(WebfingerHelper).to receive(:webfinger!).with('acct:user@example.com').and_return(resource_with_link)
           post :create, params: { account_username: @account.to_param, remote_follow: { acct: 'user@example.com' } }
         end
 
@@ -66,9 +64,7 @@ describe RemoteFollowController do
         end
 
         it 'redirects to the remote location' do
-          address = "http://example.com/follow_me?acct=acct%3Atest_user%40#{Rails.configuration.x.local_domain}"
-
-          expect(response).to redirect_to(address)
+          expect(response).to redirect_to("http://example.com/follow_me?acct=https%3A%2F%2F#{Rails.configuration.x.local_domain}%2Fusers%2Ftest_user")
         end
       end
     end
@@ -80,9 +76,17 @@ describe RemoteFollowController do
         expect(response).to render_template(:new)
       end
 
-      it 'renders new with error when goldfinger fails' do
-        allow(Goldfinger).to receive(:finger).with('acct:user@example.com').and_raise(Goldfinger::Error)
+      it 'renders new with error when webfinger fails' do
+        allow_any_instance_of(WebfingerHelper).to receive(:webfinger!).with('acct:user@example.com').and_raise(Webfinger::Error)
         post :create, params: { account_username: @account.to_param, remote_follow: { acct: 'user@example.com' } }
+
+        expect(response).to render_template(:new)
+        expect(response.body).to include(I18n.t('remote_follow.missing_resource'))
+      end
+
+      it 'renders new when occur HTTP::ConnectionError' do
+        allow_any_instance_of(WebfingerHelper).to receive(:webfinger!).with('acct:user@unknown').and_raise(HTTP::ConnectionError)
+        post :create, params: { account_username: @account.to_param, remote_follow: { acct: 'user@unknown' } }
 
         expect(response).to render_template(:new)
         expect(response.body).to include(I18n.t('remote_follow.missing_resource'))
@@ -90,21 +94,42 @@ describe RemoteFollowController do
     end
   end
 
-  describe 'with a suspended account' do
+  context 'with a permanently suspended account' do
     before do
-      @account = Fabricate(:account, suspended: true)
+      @account = Fabricate(:account)
+      @account.suspend!
+      @account.deletion_request.destroy
     end
 
-    it 'returns 410 gone on GET to #new' do
+    it 'returns http gone on GET to #new' do
       get :new, params: { account_username: @account.to_param }
 
-      expect(response).to have_http_status(:gone)
+      expect(response).to have_http_status(410)
     end
 
-    it 'returns 410 gone on POST to #create' do
+    it 'returns http gone on POST to #create' do
       post :create, params: { account_username: @account.to_param }
 
-      expect(response).to have_http_status(:gone)
+      expect(response).to have_http_status(410)
+    end
+  end
+
+  context 'with a temporarily suspended account' do
+    before do
+      @account = Fabricate(:account)
+      @account.suspend!
+    end
+
+    it 'returns http forbidden on GET to #new' do
+      get :new, params: { account_username: @account.to_param }
+
+      expect(response).to have_http_status(403)
+    end
+
+    it 'returns http forbidden on POST to #create' do
+      post :create, params: { account_username: @account.to_param }
+
+      expect(response).to have_http_status(403)
     end
   end
 end

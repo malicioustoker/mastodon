@@ -6,8 +6,8 @@ import ReplyIndicator from '../components/reply_indicator';
 const makeMapStateToProps = () => {
   const getStatus = makeGetStatus();
 
-  const mapStateToProps = (state, props) => ({
-    status: getStatus(state, state.getIn(['compose', 'in_reply_to'])),
+  const mapStateToProps = state => ({
+    status: getStatus(state, { id: state.getIn(['compose', 'in_reply_to']) }),
   });
 
   return mapStateToProps;
@@ -17,7 +17,7 @@ const mapDispatchToProps = dispatch => ({
 
   onCancel () {
     dispatch(cancelReplyCompose());
-  }
+  },
 
 });
 
